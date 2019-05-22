@@ -1,0 +1,582 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="">
+  <head>
+    <meta charset="utf-8" />
+    <title>django.contrib.gis.gdal.raster.source &#8212; Django 3.0.dev20190522053454 documentation</title>
+    <link rel="stylesheet" href="../../../../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../../../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="../../../../../../" src="../../../../../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../../../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../../../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" />
+
+
+
+ 
+<script type="text/javascript" src="../../../../../../templatebuiltins.js"></script>
+<script type="text/javascript">
+(function($) {
+    if (!django_template_builtins) {
+       // templatebuiltins.js missing, do nothing.
+       return;
+    }
+    $(document).ready(function() {
+        // Hyperlink Django template tags and filters
+        var base = "../../../../../../ref/templates/builtins.html";
+        if (base == "#") {
+            // Special case for builtins.html itself
+            base = "";
+        }
+        // Tags are keywords, class '.k'
+        $("div.highlight\\-html\\+django span.k").each(function(i, elem) {
+             var tagname = $(elem).text();
+             if ($.inArray(tagname, django_template_builtins.ttags) != -1) {
+                 var fragment = tagname.replace(/_/, '-');
+                 $(elem).html("<a href='" + base + "#" + fragment + "'>" + tagname + "</a>");
+             }
+        });
+        // Filters are functions, class '.nf'
+        $("div.highlight\\-html\\+django span.nf").each(function(i, elem) {
+             var filtername = $(elem).text();
+             if ($.inArray(filtername, django_template_builtins.tfilters) != -1) {
+                 var fragment = filtername.replace(/_/, '-');
+                 $(elem).html("<a href='" + base + "#" + fragment + "'>" + filtername + "</a>");
+             }
+        });
+    });
+})(jQuery);</script>
+
+  </head><body>
+
+    <div class="document">
+  <div id="custom-doc" class="yui-t6">
+    <div id="hd">
+      <h1><a href="../../../../../../index.html">Django 3.0.dev20190522053454 documentation</a></h1>
+      <div id="global-nav">
+        <a title="Home page" href="../../../../../../index.html">Home</a>  |
+        <a title="Table of contents" href="../../../../../../contents.html">Table of contents</a>  |
+        <a title="Global index" href="../../../../../../genindex.html">Index</a>  |
+        <a title="Module index" href="../../../../../../py-modindex.html">Modules</a>
+      </div>
+      <div class="nav">
+    <a href="../../../../../index.html" title="Module code" accesskey="U">up</a></div>
+    </div>
+
+    <div id="bd">
+      <div id="yui-main">
+        <div class="yui-b">
+          <div class="yui-g" id="_modules-django-contrib-gis-gdal-raster-source">
+            
+  <h1>Source code for django.contrib.gis.gdal.raster.source</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="k">import</span> <span class="p">(</span>
+    <span class="n">addressof</span><span class="p">,</span> <span class="n">byref</span><span class="p">,</span> <span class="n">c_buffer</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_void_p</span><span class="p">,</span> <span class="n">string_at</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.driver</span> <span class="k">import</span> <span class="n">Driver</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.error</span> <span class="k">import</span> <span class="n">GDALException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.prototypes</span> <span class="k">import</span> <span class="n">raster</span> <span class="k">as</span> <span class="n">capi</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.raster.band</span> <span class="k">import</span> <span class="n">BandList</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.raster.base</span> <span class="k">import</span> <span class="n">GDALRasterBase</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.raster.const</span> <span class="k">import</span> <span class="p">(</span>
+    <span class="n">GDAL_RESAMPLE_ALGORITHMS</span><span class="p">,</span> <span class="n">VSI_DELETE_BUFFER_ON_READ</span><span class="p">,</span>
+    <span class="n">VSI_FILESYSTEM_BASE_PATH</span><span class="p">,</span> <span class="n">VSI_TAKE_BUFFER_OWNERSHIP</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.srs</span> <span class="k">import</span> <span class="n">SpatialReference</span><span class="p">,</span> <span class="n">SRSException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geometry</span> <span class="k">import</span> <span class="n">json_regex</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="k">import</span> <span class="n">force_bytes</span><span class="p">,</span> <span class="n">force_str</span>
+<span class="kn">from</span> <span class="nn">django.utils.functional</span> <span class="k">import</span> <span class="n">cached_property</span>
+
+
+<span class="k">class</span> <span class="nc">TransformPoint</span><span class="p">(</span><span class="nb">list</span><span class="p">):</span>
+    <span class="n">indices</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;origin&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="s1">&#39;scale&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
+        <span class="s1">&#39;skew&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raster</span><span class="p">,</span> <span class="n">prop</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">raster</span><span class="o">.</span><span class="n">geotransform</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">prop</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">raster</span><span class="o">.</span><span class="n">geotransform</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">prop</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_raster</span> <span class="o">=</span> <span class="n">raster</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prop</span> <span class="o">=</span> <span class="n">prop</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">x</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="nd">@x</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">x</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">gtf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raster</span><span class="o">.</span><span class="n">geotransform</span>
+        <span class="n">gtf</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_prop</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_raster</span><span class="o">.</span><span class="n">geotransform</span> <span class="o">=</span> <span class="n">gtf</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">y</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="nd">@y</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">y</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">gtf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raster</span><span class="o">.</span><span class="n">geotransform</span>
+        <span class="n">gtf</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_prop</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_raster</span><span class="o">.</span><span class="n">geotransform</span> <span class="o">=</span> <span class="n">gtf</span>
+
+
+<div class="viewcode-block" id="GDALRaster"><a class="viewcode-back" href="../../../../../../ref/contrib/gis/gdal.html#django.contrib.gis.gdal.GDALRaster">[docs]</a><span class="k">class</span> <span class="nc">GDALRaster</span><span class="p">(</span><span class="n">GDALRasterBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wrap a raster GDAL Data Source object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">destructor</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">close_ds</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds_input</span><span class="p">,</span> <span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">write</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">Driver</span><span class="o">.</span><span class="n">ensure_registered</span><span class="p">()</span>
+
+        <span class="c1"># Preprocess json inputs. This converts json strings to dictionaries,</span>
+        <span class="c1"># which are parsed below the same way as direct dictionary inputs.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">json_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">ds_input</span><span class="p">):</span>
+            <span class="n">ds_input</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">ds_input</span><span class="p">)</span>
+
+        <span class="c1"># If input is a valid file path, try setting file as source.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># GDALOpen will auto-detect the data source type.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">open_ds</span><span class="p">(</span><span class="n">force_bytes</span><span class="p">(</span><span class="n">ds_input</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">GDALException</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Could not open the datasource at &quot;</span><span class="si">{}</span><span class="s1">&quot; (</span><span class="si">{}</span><span class="s1">).&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="n">err</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+            <span class="c1"># Create a new raster in write mode.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="c1"># Get size of buffer.</span>
+            <span class="n">size</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">getsizeof</span><span class="p">(</span><span class="n">ds_input</span><span class="p">)</span>
+            <span class="c1"># Pass data to ctypes, keeping a reference to the ctypes object so</span>
+            <span class="c1"># that the vsimem file remains available until the GDALRaster is</span>
+            <span class="c1"># deleted.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ds_input</span> <span class="o">=</span> <span class="n">c_buffer</span><span class="p">(</span><span class="n">ds_input</span><span class="p">)</span>
+            <span class="c1"># Create random name to reference in vsimem filesystem.</span>
+            <span class="n">vsi_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">VSI_FILESYSTEM_BASE_PATH</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()))</span>
+            <span class="c1"># Create vsimem file from buffer.</span>
+            <span class="n">capi</span><span class="o">.</span><span class="n">create_vsi_file_from_mem_buffer</span><span class="p">(</span>
+                <span class="n">force_bytes</span><span class="p">(</span><span class="n">vsi_path</span><span class="p">),</span>
+                <span class="n">byref</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ds_input</span><span class="p">),</span>
+                <span class="n">size</span><span class="p">,</span>
+                <span class="n">VSI_TAKE_BUFFER_OWNERSHIP</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="c1"># Open the new vsimem file as a GDALRaster.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">open_ds</span><span class="p">(</span><span class="n">force_bytes</span><span class="p">(</span><span class="n">vsi_path</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">GDALException</span><span class="p">:</span>
+                <span class="c1"># Remove the broken file from the VSI filesystem.</span>
+                <span class="n">capi</span><span class="o">.</span><span class="n">unlink_vsi_file</span><span class="p">(</span><span class="n">force_bytes</span><span class="p">(</span><span class="n">vsi_path</span><span class="p">))</span>
+                <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Failed creating VSI raster from the input buffer.&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="c1"># A new raster needs to be created in write mode</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write</span> <span class="o">=</span> <span class="mi">1</span>
+
+            <span class="c1"># Create driver (in memory by default)</span>
+            <span class="n">driver</span> <span class="o">=</span> <span class="n">Driver</span><span class="p">(</span><span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;driver&#39;</span><span class="p">,</span> <span class="s1">&#39;MEM&#39;</span><span class="p">))</span>
+
+            <span class="c1"># For out of memory drivers, check filename argument</span>
+            <span class="k">if</span> <span class="n">driver</span><span class="o">.</span><span class="n">name</span> <span class="o">!=</span> <span class="s1">&#39;MEM&#39;</span> <span class="ow">and</span> <span class="s1">&#39;name&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Specify name for creation of raster with driver &quot;</span><span class="si">{}</span><span class="s1">&quot;.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">driver</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+            <span class="c1"># Check if width and height where specified</span>
+            <span class="k">if</span> <span class="s1">&#39;width&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds_input</span> <span class="ow">or</span> <span class="s1">&#39;height&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Specify width and height attributes for JSON or dict input.&#39;</span><span class="p">)</span>
+
+            <span class="c1"># Check if srid was specified</span>
+            <span class="k">if</span> <span class="s1">&#39;srid&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Specify srid for JSON or dict input.&#39;</span><span class="p">)</span>
+
+            <span class="c1"># Create null terminated gdal options array.</span>
+            <span class="n">papsz_options</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;papsz_options&#39;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">option</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{}</span><span class="s1">=</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+                <span class="n">papsz_options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">option</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+            <span class="n">papsz_options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+
+            <span class="c1"># Convert papszlist to ctypes array.</span>
+            <span class="n">papsz_options</span> <span class="o">=</span> <span class="p">(</span><span class="n">c_char_p</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">papsz_options</span><span class="p">))(</span><span class="o">*</span><span class="n">papsz_options</span><span class="p">)</span>
+
+            <span class="c1"># Create GDAL Raster</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">create_ds</span><span class="p">(</span>
+                <span class="n">driver</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span>
+                <span class="n">force_bytes</span><span class="p">(</span><span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)),</span>
+                <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;width&#39;</span><span class="p">],</span>
+                <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;height&#39;</span><span class="p">],</span>
+                <span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;nr_of_bands&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;bands&#39;</span><span class="p">,</span> <span class="p">[]))),</span>
+                <span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;datatype&#39;</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="n">byref</span><span class="p">(</span><span class="n">papsz_options</span><span class="p">),</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Set band data if provided</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">band_input</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;bands&#39;</span><span class="p">,</span> <span class="p">[])):</span>
+                <span class="n">band</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                <span class="k">if</span> <span class="s1">&#39;nodata_value&#39;</span> <span class="ow">in</span> <span class="n">band_input</span><span class="p">:</span>
+                    <span class="n">band</span><span class="o">.</span><span class="n">nodata_value</span> <span class="o">=</span> <span class="n">band_input</span><span class="p">[</span><span class="s1">&#39;nodata_value&#39;</span><span class="p">]</span>
+                    <span class="c1"># Instantiate band filled with nodata values if only</span>
+                    <span class="c1"># partial input data has been provided.</span>
+                    <span class="k">if</span> <span class="n">band</span><span class="o">.</span><span class="n">nodata_value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+                            <span class="s1">&#39;data&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">band_input</span> <span class="ow">or</span>
+                            <span class="s1">&#39;size&#39;</span> <span class="ow">in</span> <span class="n">band_input</span> <span class="ow">or</span>
+                            <span class="s1">&#39;shape&#39;</span> <span class="ow">in</span> <span class="n">band_input</span><span class="p">):</span>
+                        <span class="n">band</span><span class="o">.</span><span class="n">data</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">nodata_value</span><span class="p">,),</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+                <span class="c1"># Set band data values from input.</span>
+                <span class="n">band</span><span class="o">.</span><span class="n">data</span><span class="p">(</span>
+                    <span class="n">data</span><span class="o">=</span><span class="n">band_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;data&#39;</span><span class="p">),</span>
+                    <span class="n">size</span><span class="o">=</span><span class="n">band_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;size&#39;</span><span class="p">),</span>
+                    <span class="n">shape</span><span class="o">=</span><span class="n">band_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;shape&#39;</span><span class="p">),</span>
+                    <span class="n">offset</span><span class="o">=</span><span class="n">band_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;offset&#39;</span><span class="p">),</span>
+                <span class="p">)</span>
+
+            <span class="c1"># Set SRID</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">srs</span> <span class="o">=</span> <span class="n">ds_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;srid&#39;</span><span class="p">)</span>
+
+            <span class="c1"># Set additional properties if provided</span>
+            <span class="k">if</span> <span class="s1">&#39;origin&#39;</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;origin&#39;</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="s1">&#39;scale&#39;</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;scale&#39;</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="s1">&#39;skew&#39;</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">skew</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">skew</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;skew&#39;</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="n">c_void_p</span><span class="p">):</span>
+            <span class="c1"># Instantiate the object using an existing pointer to a gdal raster.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span> <span class="o">=</span> <span class="n">ds_input</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Invalid data source input type: &quot;</span><span class="si">{}</span><span class="s1">&quot;.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">ds_input</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_vsi_based</span><span class="p">:</span>
+            <span class="c1"># Remove the temporary file from the VSI in-memory filesystem.</span>
+            <span class="n">capi</span><span class="o">.</span><span class="n">unlink_vsi_file</span><span class="p">(</span><span class="n">force_bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__del__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Short-hand representation because WKB may be very large.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s1">&#39;&lt;Raster object at </span><span class="si">%s</span><span class="s1">&gt;&#39;</span> <span class="o">%</span> <span class="nb">hex</span><span class="p">(</span><span class="n">addressof</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_flush</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Flush all data from memory into the source file if it exists.</span>
+<span class="sd">        The data that needs flushing are geotransforms, coordinate systems,</span>
+<span class="sd">        nodata_values and pixel values. This function will be called</span>
+<span class="sd">        automatically wherever it is needed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Raise an Exception if the value is being changed in read mode.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Raster needs to be opened in write mode to change values.&#39;</span><span class="p">)</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">flush_ds</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">vsi_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_vsi_based</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># Prepare an integer that will contain the buffer length.</span>
+        <span class="n">out_length</span> <span class="o">=</span> <span class="n">c_int</span><span class="p">()</span>
+        <span class="c1"># Get the data using the vsi file name.</span>
+        <span class="n">dat</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_mem_buffer_from_vsi_file</span><span class="p">(</span>
+            <span class="n">force_bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+            <span class="n">byref</span><span class="p">(</span><span class="n">out_length</span><span class="p">),</span>
+            <span class="n">VSI_DELETE_BUFFER_ON_READ</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Read the full buffer pointer.</span>
+        <span class="k">return</span> <span class="n">string_at</span><span class="p">(</span><span class="n">dat</span><span class="p">,</span> <span class="n">out_length</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">is_vsi_based</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">VSI_FILESYSTEM_BASE_PATH</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the name of this raster. Corresponds to filename</span>
+<span class="sd">        for file-based rasters.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">force_str</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_ds_description</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">))</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">driver</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the GDAL Driver used for this raster.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ds_driver</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_driver</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Driver</span><span class="p">(</span><span class="n">ds_driver</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">width</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Width (X axis) in pixels.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_xsize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">height</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Height (Y axis) in pixels.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_ysize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">srs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the SpatialReference used in this GDALRaster.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">wkt</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_projection_ref</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">wkt</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="n">SpatialReference</span><span class="p">(</span><span class="n">wkt</span><span class="p">,</span> <span class="n">srs_type</span><span class="o">=</span><span class="s1">&#39;wkt&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">SRSException</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="nd">@srs</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">srs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Set the spatial reference used in this GDALRaster. The input can be</span>
+<span class="sd">        a SpatialReference or any parameter accepted by the SpatialReference</span>
+<span class="sd">        constructor.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">SpatialReference</span><span class="p">):</span>
+            <span class="n">srs</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
+            <span class="n">srs</span> <span class="o">=</span> <span class="n">SpatialReference</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;Could not create a SpatialReference from input.&#39;</span><span class="p">)</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">set_ds_projection_ref</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">srs</span><span class="o">.</span><span class="n">wkt</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_flush</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">srid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Shortcut to access the srid of this GDALRaster.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">srs</span><span class="o">.</span><span class="n">srid</span>
+
+    <span class="nd">@srid</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">srid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Shortcut to set this GDALRaster&#39;s srs from an srid.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">srs</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">geotransform</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the geotransform of the data source.</span>
+<span class="sd">        Return the default geotransform if it does not exist or has not been</span>
+<span class="sd">        set previously. The default is [0.0, 1.0, 0.0, 0.0, 0.0, -1.0].</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Create empty ctypes double array for data</span>
+        <span class="n">gtf</span> <span class="o">=</span> <span class="p">(</span><span class="n">c_double</span> <span class="o">*</span> <span class="mi">6</span><span class="p">)()</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_geotransform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">gtf</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">gtf</span><span class="p">)</span>
+
+    <span class="nd">@geotransform</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">geotransform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+        <span class="s2">&quot;Set the geotransform for the data source.&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">6</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">values</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;Geotransform must consist of 6 numeric values.&#39;</span><span class="p">)</span>
+        <span class="c1"># Create ctypes double array with input and write data</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">(</span><span class="n">c_double</span> <span class="o">*</span> <span class="mi">6</span><span class="p">)(</span><span class="o">*</span><span class="n">values</span><span class="p">)</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">set_ds_geotransform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">values</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_flush</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">origin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Coordinates of the raster origin.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">TransformPoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;origin&#39;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">scale</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Pixel scale in units of the raster projection.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">TransformPoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;scale&#39;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">skew</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Skew of pixels (rotation parameters).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">TransformPoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;skew&#39;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">extent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the extent as a 4-tuple (xmin, ymin, xmax, ymax).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Calculate boundary values based on scale and size</span>
+        <span class="n">xval</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span>
+        <span class="n">yval</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">y</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">height</span>
+        <span class="c1"># Calculate min and max values</span>
+        <span class="n">xmin</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">xval</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">xmax</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">xval</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">ymin</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">yval</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">ymax</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">yval</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">y</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">bands</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">BandList</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+<div class="viewcode-block" id="GDALRaster.warp"><a class="viewcode-back" href="../../../../../../ref/contrib/gis/gdal.html#django.contrib.gis.gdal.GDALRaster.warp">[docs]</a>    <span class="k">def</span> <span class="nf">warp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds_input</span><span class="p">,</span> <span class="n">resampling</span><span class="o">=</span><span class="s1">&#39;NearestNeighbour&#39;</span><span class="p">,</span> <span class="n">max_error</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a warped GDALRaster with the given input characteristics.</span>
+
+<span class="sd">        The input is expected to be a dictionary containing the parameters</span>
+<span class="sd">        of the target raster. Allowed values are width, height, SRID, origin,</span>
+<span class="sd">        scale, skew, datatype, driver, and name (filename).</span>
+
+<span class="sd">        By default, the warp functions keeps all parameters equal to the values</span>
+<span class="sd">        of the original source raster. For the name of the target raster, the</span>
+<span class="sd">        name of the source raster will be used and appended with</span>
+<span class="sd">        _copy. + source_driver_name.</span>
+
+<span class="sd">        In addition, the resampling algorithm can be specified with the &quot;resampling&quot;</span>
+<span class="sd">        input parameter. The default is NearestNeighbor. For a list of all options</span>
+<span class="sd">        consult the GDAL_RESAMPLE_ALGORITHMS constant.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get the parameters defining the geotransform, srid, and size of the raster</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;width&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">)</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;height&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">height</span><span class="p">)</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;srid&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">srs</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;origin&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;scale&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="p">)</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;skew&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">skew</span><span class="p">)</span>
+        <span class="c1"># Get the driver, name, and datatype of the target raster</span>
+        <span class="n">ds_input</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s1">&#39;driver&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="s1">&#39;name&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+            <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s1">&#39;_copy.&#39;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">name</span>
+
+        <span class="k">if</span> <span class="s1">&#39;datatype&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ds_input</span><span class="p">:</span>
+            <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;datatype&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">datatype</span><span class="p">()</span>
+
+        <span class="c1"># Instantiate raster bands filled with nodata values.</span>
+        <span class="n">ds_input</span><span class="p">[</span><span class="s1">&#39;bands&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[{</span><span class="s1">&#39;nodata_value&#39;</span><span class="p">:</span> <span class="n">bnd</span><span class="o">.</span><span class="n">nodata_value</span><span class="p">}</span> <span class="k">for</span> <span class="n">bnd</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">bands</span><span class="p">]</span>
+
+        <span class="c1"># Create target raster</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">GDALRaster</span><span class="p">(</span><span class="n">ds_input</span><span class="p">,</span> <span class="n">write</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># Select resampling algorithm</span>
+        <span class="n">algorithm</span> <span class="o">=</span> <span class="n">GDAL_RESAMPLE_ALGORITHMS</span><span class="p">[</span><span class="n">resampling</span><span class="p">]</span>
+
+        <span class="c1"># Reproject image</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">reproject_image</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">srs</span><span class="o">.</span><span class="n">wkt</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+            <span class="n">target</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">srs</span><span class="o">.</span><span class="n">wkt</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+            <span class="n">algorithm</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">max_error</span><span class="p">,</span>
+            <span class="n">c_void_p</span><span class="p">(),</span> <span class="n">c_void_p</span><span class="p">(),</span> <span class="n">c_void_p</span><span class="p">()</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Make sure all data is written to file</span>
+        <span class="n">target</span><span class="o">.</span><span class="n">_flush</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">target</span></div>
+
+<div class="viewcode-block" id="GDALRaster.transform"><a class="viewcode-back" href="../../../../../../ref/contrib/gis/gdal.html#django.contrib.gis.gdal.GDALRaster.transform">[docs]</a>    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">srid</span><span class="p">,</span> <span class="n">driver</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resampling</span><span class="o">=</span><span class="s1">&#39;NearestNeighbour&#39;</span><span class="p">,</span>
+                  <span class="n">max_error</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a copy of this raster reprojected into the given SRID.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Convert the resampling algorithm name into an algorithm id</span>
+        <span class="n">algorithm</span> <span class="o">=</span> <span class="n">GDAL_RESAMPLE_ALGORITHMS</span><span class="p">[</span><span class="n">resampling</span><span class="p">]</span>
+
+        <span class="c1"># Instantiate target spatial reference system</span>
+        <span class="n">target_srs</span> <span class="o">=</span> <span class="n">SpatialReference</span><span class="p">(</span><span class="n">srid</span><span class="p">)</span>
+
+        <span class="c1"># Create warped virtual dataset in the target reference system</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">auto_create_warped_vrt</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">srs</span><span class="o">.</span><span class="n">wkt</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span> <span class="n">target_srs</span><span class="o">.</span><span class="n">wkt</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span>
+            <span class="n">algorithm</span><span class="p">,</span> <span class="n">max_error</span><span class="p">,</span> <span class="n">c_void_p</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">GDALRaster</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+
+        <span class="c1"># Construct the target warp dictionary from the virtual raster</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;srid&#39;</span><span class="p">:</span> <span class="n">srid</span><span class="p">,</span>
+            <span class="s1">&#39;width&#39;</span><span class="p">:</span> <span class="n">target</span><span class="o">.</span><span class="n">width</span><span class="p">,</span>
+            <span class="s1">&#39;height&#39;</span><span class="p">:</span> <span class="n">target</span><span class="o">.</span><span class="n">height</span><span class="p">,</span>
+            <span class="s1">&#39;origin&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">target</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">y</span><span class="p">],</span>
+            <span class="s1">&#39;scale&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">target</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">y</span><span class="p">],</span>
+            <span class="s1">&#39;skew&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">target</span><span class="o">.</span><span class="n">skew</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">skew</span><span class="o">.</span><span class="n">y</span><span class="p">],</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Set the driver and filepath if provided</span>
+        <span class="k">if</span> <span class="n">driver</span><span class="p">:</span>
+            <span class="n">data</span><span class="p">[</span><span class="s1">&#39;driver&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">driver</span>
+
+        <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+            <span class="n">data</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
+
+        <span class="c1"># Warp the raster into new srid</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">resampling</span><span class="o">=</span><span class="n">resampling</span><span class="p">,</span> <span class="n">max_error</span><span class="o">=</span><span class="n">max_error</span><span class="p">)</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return information about this raster in a string format equivalent</span>
+<span class="sd">        to the output of the gdalinfo command line utility.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_info</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;GDAL ≥ 2.1 is required for using the info property.&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_ds_info</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      
+        
+          <div class="yui-b" id="sidebar">
+            
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+              <h3>Last update:</h3>
+              <p class="topless">May 22, 2019</p>
+          </div>
+        
+      
+    </div>
+
+    <div id="ft">
+      <div class="nav">
+    <a href="../../../../../index.html" title="Module code" accesskey="U">up</a></div>
+    </div>
+  </div>
+
+      <div class="clearer"></div>
+    </div>
+  </body>
+</html>

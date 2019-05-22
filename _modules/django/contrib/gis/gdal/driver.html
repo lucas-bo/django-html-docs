@@ -1,0 +1,212 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="">
+  <head>
+    <meta charset="utf-8" />
+    <title>django.contrib.gis.gdal.driver &#8212; Django 3.0.dev20190522053454 documentation</title>
+    <link rel="stylesheet" href="../../../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="../../../../../" src="../../../../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" />
+
+
+
+ 
+<script type="text/javascript" src="../../../../../templatebuiltins.js"></script>
+<script type="text/javascript">
+(function($) {
+    if (!django_template_builtins) {
+       // templatebuiltins.js missing, do nothing.
+       return;
+    }
+    $(document).ready(function() {
+        // Hyperlink Django template tags and filters
+        var base = "../../../../../ref/templates/builtins.html";
+        if (base == "#") {
+            // Special case for builtins.html itself
+            base = "";
+        }
+        // Tags are keywords, class '.k'
+        $("div.highlight\\-html\\+django span.k").each(function(i, elem) {
+             var tagname = $(elem).text();
+             if ($.inArray(tagname, django_template_builtins.ttags) != -1) {
+                 var fragment = tagname.replace(/_/, '-');
+                 $(elem).html("<a href='" + base + "#" + fragment + "'>" + tagname + "</a>");
+             }
+        });
+        // Filters are functions, class '.nf'
+        $("div.highlight\\-html\\+django span.nf").each(function(i, elem) {
+             var filtername = $(elem).text();
+             if ($.inArray(filtername, django_template_builtins.tfilters) != -1) {
+                 var fragment = filtername.replace(/_/, '-');
+                 $(elem).html("<a href='" + base + "#" + fragment + "'>" + filtername + "</a>");
+             }
+        });
+    });
+})(jQuery);</script>
+
+  </head><body>
+
+    <div class="document">
+  <div id="custom-doc" class="yui-t6">
+    <div id="hd">
+      <h1><a href="../../../../../index.html">Django 3.0.dev20190522053454 documentation</a></h1>
+      <div id="global-nav">
+        <a title="Home page" href="../../../../../index.html">Home</a>  |
+        <a title="Table of contents" href="../../../../../contents.html">Table of contents</a>  |
+        <a title="Global index" href="../../../../../genindex.html">Index</a>  |
+        <a title="Module index" href="../../../../../py-modindex.html">Modules</a>
+      </div>
+      <div class="nav">
+    <a href="../../../../index.html" title="Module code" accesskey="U">up</a></div>
+    </div>
+
+    <div id="bd">
+      <div id="yui-main">
+        <div class="yui-b">
+          <div class="yui-g" id="_modules-django-contrib-gis-gdal-driver">
+            
+  <h1>Source code for django.contrib.gis.gdal.driver</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">ctypes</span> <span class="k">import</span> <span class="n">c_void_p</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.base</span> <span class="k">import</span> <span class="n">GDALBase</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.error</span> <span class="k">import</span> <span class="n">GDALException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.prototypes</span> <span class="k">import</span> <span class="n">ds</span> <span class="k">as</span> <span class="n">vcapi</span><span class="p">,</span> <span class="n">raster</span> <span class="k">as</span> <span class="n">rcapi</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="k">import</span> <span class="n">force_bytes</span><span class="p">,</span> <span class="n">force_str</span>
+
+
+<div class="viewcode-block" id="Driver"><a class="viewcode-back" href="../../../../../ref/contrib/gis/gdal.html#django.contrib.gis.gdal.Driver">[docs]</a><span class="k">class</span> <span class="nc">Driver</span><span class="p">(</span><span class="n">GDALBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wrap a GDAL/OGR Data Source Driver.</span>
+<span class="sd">    For more information, see the C API source code:</span>
+<span class="sd">    https://www.gdal.org/gdal_8h.html - https://www.gdal.org/ogr__api_8h.html</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Case-insensitive aliases for some GDAL/OGR Drivers.</span>
+    <span class="c1"># For a complete list of original driver names see</span>
+    <span class="c1"># https://www.gdal.org/ogr_formats.html (vector)</span>
+    <span class="c1"># https://www.gdal.org/formats_list.html (raster)</span>
+    <span class="n">_alias</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="c1"># vector</span>
+        <span class="s1">&#39;esri&#39;</span><span class="p">:</span> <span class="s1">&#39;ESRI Shapefile&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;shp&#39;</span><span class="p">:</span> <span class="s1">&#39;ESRI Shapefile&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;shape&#39;</span><span class="p">:</span> <span class="s1">&#39;ESRI Shapefile&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;tiger&#39;</span><span class="p">:</span> <span class="s1">&#39;TIGER&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;tiger/line&#39;</span><span class="p">:</span> <span class="s1">&#39;TIGER&#39;</span><span class="p">,</span>
+        <span class="c1"># raster</span>
+        <span class="s1">&#39;tiff&#39;</span><span class="p">:</span> <span class="s1">&#39;GTiff&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;tif&#39;</span><span class="p">:</span> <span class="s1">&#39;GTiff&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;jpeg&#39;</span><span class="p">:</span> <span class="s1">&#39;JPEG&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;jpg&#39;</span><span class="p">:</span> <span class="s1">&#39;JPEG&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dr_input</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize an GDAL/OGR driver on either a string or integer input.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dr_input</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="c1"># If a string name of the driver was passed in</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ensure_registered</span><span class="p">()</span>
+
+            <span class="c1"># Checking the alias dictionary (case-insensitive) to see if an</span>
+            <span class="c1"># alias exists for the given driver.</span>
+            <span class="k">if</span> <span class="n">dr_input</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias</span><span class="p">[</span><span class="n">dr_input</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">dr_input</span>
+
+            <span class="c1"># Attempting to get the GDAL/OGR driver by the string name.</span>
+            <span class="k">for</span> <span class="n">iface</span> <span class="ow">in</span> <span class="p">(</span><span class="n">vcapi</span><span class="p">,</span> <span class="n">rcapi</span><span class="p">):</span>
+                <span class="n">driver</span> <span class="o">=</span> <span class="n">c_void_p</span><span class="p">(</span><span class="n">iface</span><span class="o">.</span><span class="n">get_driver_by_name</span><span class="p">(</span><span class="n">force_bytes</span><span class="p">(</span><span class="n">name</span><span class="p">)))</span>
+                <span class="k">if</span> <span class="n">driver</span><span class="p">:</span>
+                    <span class="k">break</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dr_input</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ensure_registered</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">iface</span> <span class="ow">in</span> <span class="p">(</span><span class="n">vcapi</span><span class="p">,</span> <span class="n">rcapi</span><span class="p">):</span>
+                <span class="n">driver</span> <span class="o">=</span> <span class="n">iface</span><span class="o">.</span><span class="n">get_driver</span><span class="p">(</span><span class="n">dr_input</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">driver</span><span class="p">:</span>
+                    <span class="k">break</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dr_input</span><span class="p">,</span> <span class="n">c_void_p</span><span class="p">):</span>
+            <span class="n">driver</span> <span class="o">=</span> <span class="n">dr_input</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Unrecognized input type for GDAL/OGR Driver: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="nb">type</span><span class="p">(</span><span class="n">dr_input</span><span class="p">))</span>
+
+        <span class="c1"># Making sure we get a valid pointer to the OGR Driver</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">driver</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GDALException</span><span class="p">(</span><span class="s1">&#39;Could not initialize GDAL/OGR Driver on input: </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">dr_input</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">driver</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">ensure_registered</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Attempt to register all the data source drivers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Only register all if the driver counts are 0 (or else all drivers</span>
+        <span class="c1"># will be registered over and over again)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">vcapi</span><span class="o">.</span><span class="n">get_driver_count</span><span class="p">():</span>
+            <span class="n">vcapi</span><span class="o">.</span><span class="n">register_all</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">rcapi</span><span class="o">.</span><span class="n">get_driver_count</span><span class="p">():</span>
+            <span class="n">rcapi</span><span class="o">.</span><span class="n">register_all</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Driver.driver_count"><a class="viewcode-back" href="../../../../../ref/contrib/gis/gdal.html#django.contrib.gis.gdal.Driver.driver_count">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">driver_count</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the number of GDAL/OGR data source drivers registered.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">vcapi</span><span class="o">.</span><span class="n">get_driver_count</span><span class="p">()</span> <span class="o">+</span> <span class="n">rcapi</span><span class="o">.</span><span class="n">get_driver_count</span><span class="p">()</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return description/name string for this driver.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">force_str</span><span class="p">(</span><span class="n">rcapi</span><span class="o">.</span><span class="n">get_driver_description</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">))</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      
+        
+          <div class="yui-b" id="sidebar">
+            
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+              <h3>Last update:</h3>
+              <p class="topless">May 22, 2019</p>
+          </div>
+        
+      
+    </div>
+
+    <div id="ft">
+      <div class="nav">
+    <a href="../../../../index.html" title="Module code" accesskey="U">up</a></div>
+    </div>
+  </div>
+
+      <div class="clearer"></div>
+    </div>
+  </body>
+</html>
